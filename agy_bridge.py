@@ -103,16 +103,23 @@ def atomic_write(file_path, content):
     os.replace(temp_path, file_path)
 
 def get_initial_content(bot_name):
-    projects_dir = os.path.join(BASE_ICLOUD_DIR, "projects").replace("\\", "/")
     return f"""# {bot_name} Chat
 
-Welcome to the {bot_name} Cloud Bridge! Type your message under the **User:** tag, type .end on a new line and hit Return to send, and {bot_name} will reply.
+Welcome to the {bot_name} Cloud Bridge! Type your message under the **User:** tag, type `.end` or `.restart` on a new line and hit Return to send, and {bot_name} will reply.
 Optional: set a workspace directory or system prompt below.
-**Workspace:** {projects_dir}
-**System Prompt:** You are a helpful assistant.
+**Workspace:** 
+**System Prompt:** 
 
 **User:** 
 """
+
+def ensure_templates_exist():
+    for folder, config in CONFIGS.items():
+        dir_path = os.path.join(BASE_ICLOUD_DIR, folder)
+        template_file = os.path.join(dir_path, "template.md")
+        if not os.path.exists(template_file):
+            atomic_write(template_file, get_initial_content(config["name"]))
+            logging.info(f"Created template file at {template_file}")
 
 def initialize_directories():
     for folder, config in CONFIGS.items():
@@ -125,20 +132,25 @@ def initialize_directories():
         os.makedirs(assets_dir, exist_ok=True)
         logging.info(f"Ensured directories exist: {dir_path}")
         
-        md_files = [f for f in os.listdir(dir_path) if f.endswith('.md')]
-        if not md_files:
-            starter_file = os.path.join(dir_path, "Welcome.md")
-            atomic_write(starter_file, get_initial_content(config["name"]))
-            logging.info(f"Created initial chat file at {starter_file}")
+    ensure_templates_exist()
 
-def extract_workspace(content):
+def extract_workspace(content, file_path):
     match = re.search(r'\*\*Workspace:\*\*\s*(.+)', content)
     if match:
-        path = os.path.expanduser(match.group(1).strip().strip('\'"'))
-        if os.path.isdir(path):
-            return path, True
-        return path, False
-    return os.path.expanduser("~/"), True
+        path_str = match.group(1).strip().strip('\'"')
+        if path_str:
+            path = os.path.expanduser(path_str)
+            if os.path.isdir(path):
+                return path, True
+            return path, False
+            
+    base_name = os.path.splitext(os.path.basename(file_path))[0]
+    clean_name = re.sub(r'^\d{4}-\d{2}-\d{2}-', '', base_name)
+    path = os.path.expanduser(f"~/Developer/{clean_name}")
+    
+    if os.path.isdir(path):
+        return path, True
+    return path, False
 
 def extract_system_prompt(content):
     match = re.search(r'\*\*System Prompt:\*\*\s*(.+)', content)
@@ -218,7 +230,7 @@ def parse_and_respond(file_path, folder_name):
         
         content = COMMAND_STRIP_REGEX.sub('', content)
         
-        workspace_dir, is_valid_workspace = extract_workspace(content)
+        workspace_dir, is_valid_workspace = extract_workspace(content, file_path)
         if not is_valid_workspace:
             warning_msg = f"**System Warning:** Workspace path `{workspace_dir}` not found, falling back to `~/`."
             content += f"\n\n{warning_msg}"
@@ -226,7 +238,13 @@ def parse_and_respond(file_path, folder_name):
 
         sys_prompt = extract_system_prompt(content)
         
+        is_template = (os.path.basename(file_path).lower() == 'template.md')
+        is_first_prompt = (last_bot_idx == -1 and is_template)
+        
         think_instruction = "IMPORTANT: You MUST think out loud step-by-step and explain your reasoning BEFORE giving your final answer."
+        if is_first_prompt:
+            think_instruction += " Since this is the first turn, you MUST start your response with a title for this chat in the exact format `Title: <your title here>` on its own line before your thought block."
+            
         if sys_prompt:
             sys_prompt += f" {think_instruction}"
         else:
@@ -234,7 +252,7 @@ def parse_and_respond(file_path, folder_name):
             
         full_context = f"System Instruction: {sys_prompt}\n\n" + content
             
-        atomic_write(file_path, content + f"\n\n{bot_tag}\n")
+        atomic_write(file_path, content + f"\n\n{bot_tag}\n```\n")
             
         try:
             env = os.environ.copy()
@@ -306,17 +324,52 @@ def parse_and_respond(file_path, folder_name):
                         f.flush()
                 
             with open(file_path, "a", encoding="utf-8") as f:
-                f.write(f"\n\n{user_tag} \n")
+                f.write(f"\n```\n\n{user_tag} \n")
                 f.flush()
                 
             logging.info(f"Finished streaming response to {os.path.basename(file_path)}")
             
             process_artifacts(file_path, folder_name)
             
+            if is_first_prompt:
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        final_content = f.read()
+                    
+                    import datetime
+                    match = re.search(r'(?i)^Title:\s*(.+)', final_content, re.MULTILINE)
+                    if match:
+                        title_str = match.group(1).strip()
+                        
+                        # Replace the generic H1 header with the new title
+                        final_content = re.sub(r'^#\s+.*Chat', f'# {title_str}', final_content, count=1)
+                        # Optionally remove the 'Title: ...' line from the bot's response
+                        final_content = re.sub(r'(?i)^Title:\s*(.+)\n', '', final_content, count=1, flags=re.MULTILINE)
+                        
+                        atomic_write(file_path, final_content)
+                        
+                        title_str_safe = re.sub(r'[^a-zA-Z0-9_\- ]', '', title_str).strip()
+                        title_str_safe = title_str_safe.replace(' ', '-')
+                        if title_str_safe:
+                            date_str = datetime.datetime.now().strftime("%Y-%m-%d")
+                            new_filename = f"{date_str}-{title_str_safe}.md"
+                            new_file_path = os.path.join(os.path.dirname(file_path), new_filename)
+                            
+                            counter = 1
+                            while os.path.exists(new_file_path):
+                                new_filename = f"{date_str}-{title_str_safe}-{counter}.md"
+                                new_file_path = os.path.join(os.path.dirname(file_path), new_filename)
+                                counter += 1
+                                
+                            os.rename(file_path, new_file_path)
+                            logging.info(f"Renamed file to {new_filename}")
+                except Exception as e:
+                    logging.error(f"Error renaming file after first prompt: {e}")
+            
         except Exception as e:
             logging.error(f"Failed to run {bot_name}: {e}")
             with open(file_path, "a", encoding="utf-8") as f:
-                f.write(f"Error running {bot_name}: {e}")
+                f.write(f"\nError running {bot_name}: {e}\n```\n\n{user_tag} \n")
 
 def get_md_files():
     md_files = {}
@@ -352,6 +405,7 @@ def main():
     
     while True:
         try:
+            ensure_templates_exist()
             current_mtimes_full = get_md_files()
             
             for file_path in list(current_mtimes_full.keys()):

@@ -11,13 +11,16 @@ The bridge monitors two folders inside your iCloud Documents (`~/Library/Mobile 
 | `agy-chats/` | Agy |
 | `claude-chats/` | Claude Code |
 
-Create a `.md` file in the folder of the AI you want to talk to, type your message under the `**User:**` tag, add `.end` on its own line, and hit Return — the AI replies in real-time.
+Duplicate `template.md` in the folder of the AI you want to talk to, type your message under the `**User:**` tag, add `.end` on its own line, and hit Return — the AI replies in real-time. The file will automatically rename itself based on your first prompt!
 
 ## Features
 
 - **Multi-AI Routing**: Each chat folder routes to its own AI binary with independent configuration.
 - **True Conversation Memory**: The entire markdown file is passed as context. Edit or delete previous messages — the AI adapts natively.
 - **Live Streaming**: Responses stream one character at a time and flush to iCloud every second, so you see the AI "type" in real-time.
+- **Auto-Renaming**: Start chatting in `template.md` and the bridge will automatically generate a title and rename the file `YYYY-MM-DD-topic.md`.
+- **Smart Workspaces**: If you leave the `**Workspace:**` tag blank, it automatically sets the workspace to `~/Developer/<chat-title>`.
+- **Markdown Code Blocks**: AI responses are automatically wrapped in markdown code blocks to keep your editor clean.
 - **Auto-Continuation**: After each response, a fresh `**User:**` tag is appended so you can immediately type your next message.
 - **Artifact Syncing**: Generated images and local file artifacts are copied to `logs/assets/` and markdown links are rewritten so they display instantly on iOS.
 - **Permissionless Mode**: All CLI tool calls are auto-approved — no terminal prompts block your chat.
@@ -27,7 +30,7 @@ Create a `.md` file in the folder of the AI you want to talk to, type your messa
 
 ## Sending a Message
 
-1. Open (or create) a `.md` file in `agy-chats/` or `claude-chats/`.
+1. Open or duplicate `template.md` in `agy-chats/` or `claude-chats/`.
 2. Type your message under `**User:**`.
 3. On a new line, type `.end` and press Return.
 4. The bridge detects the `.end` marker, invokes the AI, and streams the response.
@@ -71,19 +74,19 @@ Check out my latest code!
 | `**Workspace:** <path>` | Sets the working directory for the AI process |
 | `**System Prompt:** <text>` | Prepends a system instruction to the conversation context |
 
-If no workspace is specified, defaults to `~/`. If the workspace path doesn't exist, the bridge writes a warning to the chat file and falls back to `~/`.
+If the workspace tag is left blank, it automatically infers `~/Developer/<chat-title>` based on the filename (stripping the date prefix). If that directory doesn't exist, the bridge writes a warning to the chat file and falls back to `~/`.
 
 ## Directory Structure
 
 ```
 ~/Library/Mobile Documents/com~apple~CloudDocs/agy-icloud-chat/
 ├── agy-chats/
-│   ├── Welcome.md          # Auto-created on first run if folder is empty
+│   ├── template.md         # Duplicate this to start a new chat!
 │   ├── *.md                # Your chat files
 │   └── logs/
 │       └── assets/         # Synced artifact files (images, etc.)
 └── claude-chats/
-    ├── Welcome.md
+    ├── template.md
     ├── *.md
     └── logs/
         └── assets/
@@ -144,7 +147,7 @@ Make sure your API keys are exported in `~/.zshrc`.
 ```
 agy_bridge.py
 ├── atomic_write()               # Write to temp file then os.replace() for crash-safe atomic writes
-├── initialize_directories()     # Ensure folders, logs/, assets/ exist; create Welcome.md
+├── ensure_templates_exist()     # Ensure template.md exists in each folder
 ├── main()                       # Poll iCloud dirs for .md file changes every 1s
 │   └── parse_and_respond()      # Detect .end/.restart commands, invoke CLI, stream response
 │       ├── extract_workspace()  # Parse **Workspace:** frontmatter, validate path exists
