@@ -6,6 +6,7 @@ import re
 import shutil
 import sys
 import tempfile
+import json
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 
@@ -34,18 +35,60 @@ def strip_ansi_and_control(text):
     ''', re.VERBOSE)
     return ANSI_ESCAPE.sub('', text)
 
-BASE_ICLOUD_DIR = os.path.expanduser("~/Library/Mobile Documents/com~apple~CloudDocs/agy-icloud-chat")
+CONFIG_FILE = os.path.expanduser("~/.agy_bridge_config.json")
+
+def load_config():
+    if os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {}
+
+def save_config(config):
+    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+        json.dump(config, f, indent=4)
+
+def get_base_dir():
+    config = load_config()
+    if 'base_dir' in config:
+        return os.path.expanduser(config['base_dir'])
+    
+    print("=========================================")
+    print("        Welcome to Agy Bridge!           ")
+    print("=========================================")
+    print("It looks like this is your first run.")
+    print("Please enter the path to your cloud folder")
+    print("(e.g., ~/iCloud/agy-chat, ~/Dropbox/agy-chat):")
+    try:
+        base_dir = input("> ").strip()
+    except EOFError:
+        base_dir = ""
+        
+    if not base_dir:
+        base_dir = "~/agy-cloud-chat"
+        print(f"No input provided. Defaulting to {base_dir}")
+    
+    config['base_dir'] = base_dir
+    save_config(config)
+    return os.path.expanduser(base_dir)
+
+BASE_ICLOUD_DIR = get_base_dir()
+
+def get_bin_path(cmd_name):
+    path = shutil.which(cmd_name)
+    if path:
+        return path
+    return os.path.expanduser(f"~/.local/bin/{cmd_name}")
 
 # Define the CLI configurations
 CONFIGS = {
     "agy-chats": {
-        "bin": os.path.expanduser("~/.local/bin/agy"),
+        "bin": get_bin_path("agy"),
         "flags": ["--dangerously-skip-permissions", "--print"],
         "tag": "**Agy:**",
         "name": "Agy"
     },
     "claude-chats": {
-        "bin": os.path.expanduser("~/.local/bin/claude"),
+        "bin": get_bin_path("claude"),
         "flags": ["--permission-mode", "bypassPermissions", "--print", "--verbose"],
         "tag": "**Claude:**",
         "name": "Claude"
@@ -60,11 +103,12 @@ def atomic_write(file_path, content):
     os.replace(temp_path, file_path)
 
 def get_initial_content(bot_name):
+    projects_dir = os.path.join(BASE_ICLOUD_DIR, "projects").replace("\\", "/")
     return f"""# {bot_name} Chat
 
-Welcome to the {bot_name} iCloud Bridge! Type your message under the **User:** tag, type .end on a new line and hit Return to send, and {bot_name} will reply.
+Welcome to the {bot_name} Cloud Bridge! Type your message under the **User:** tag, type .end on a new line and hit Return to send, and {bot_name} will reply.
 Optional: set a workspace directory or system prompt below.
-**Workspace:** ~/Library/Mobile Documents/com~apple~CloudDocs/agy-icloud-chat/projects
+**Workspace:** {projects_dir}
 **System Prompt:** You are a helpful assistant.
 
 **User:** 
@@ -193,14 +237,29 @@ def parse_and_respond(file_path, folder_name):
         atomic_write(file_path, content + f"\n\n{bot_tag}\n")
             
         try:
-            # Explicitly source ~/.zshrc to ensure API keys are loaded, then run the CLI
-            # We also map ANTHROPIC_AUTH_TOKEN to ANTHROPIC_API_KEY because Claude CLI specifically looks for the latter.
-            zsh_command = f"source ~/.zshrc 2>/dev/null; export TERM=dumb; export NO_COLOR=1; export FORCE_COLOR=0; [ -n \"$ANTHROPIC_AUTH_TOKEN\" ] && export ANTHROPIC_API_KEY=\"$ANTHROPIC_AUTH_TOKEN\"; \"{config['bin']}\" {' '.join(config['flags'])} \"$1\""
-            cmd = [
-                "/bin/zsh", "-c",
-                zsh_command,
-                "--", full_context
-            ]
+            env = os.environ.copy()
+            env["TERM"] = "dumb"
+            env["NO_COLOR"] = "1"
+            env["FORCE_COLOR"] = "0"
+            if env.get("ANTHROPIC_AUTH_TOKEN"):
+                env["ANTHROPIC_API_KEY"] = env["ANTHROPIC_AUTH_TOKEN"]
+
+            bin_path = config['bin']
+            cmd_args = [bin_path] + config['flags'] + [full_context]
+            
+            if os.name != 'nt':
+                shell = os.environ.get("SHELL", "/bin/sh")
+                if "zsh" in shell:
+                    zsh_command = f"source ~/.zshrc 2>/dev/null; \"{bin_path}\" {' '.join(config['flags'])} \"$1\""
+                    cmd = [shell, "-c", zsh_command, "--", full_context]
+                elif "bash" in shell:
+                    bash_command = f"source ~/.bashrc 2>/dev/null; \"{bin_path}\" {' '.join(config['flags'])} \"$1\""
+                    cmd = [shell, "-c", bash_command, "--", full_context]
+                else:
+                    cmd = [shell, "-c", f"\"{bin_path}\" {' '.join(config['flags'])} \"$1\"", "--", full_context]
+            else:
+                cmd = cmd_args
+
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -208,6 +267,7 @@ def parse_and_respond(file_path, folder_name):
                 stdin=subprocess.DEVNULL,
                 text=True,
                 cwd=workspace_dir,
+                env=env,
                 bufsize=1
             )
             
@@ -273,10 +333,18 @@ def get_md_files():
 def main():
     initialize_directories()
     
-    for config in CONFIGS.values():
+    missing = []
+    for key, config in CONFIGS.items():
         if not os.path.exists(config["bin"]):
-            logging.error(f"{config['name']} executable not found at {config['bin']}")
-            return
+            logging.warning(f"{config['name']} executable not found at {config['bin']}")
+            missing.append(key)
+            
+    for key in missing:
+        del CONFIGS[key]
+        
+    if not CONFIGS:
+        logging.error("No executables found. Exiting.")
+        return
             
     logging.info(f"Watching {BASE_ICLOUD_DIR} subdirectories for changes...")
     
