@@ -1,10 +1,12 @@
-# iCloud AI Bridge
+# Agy Cloud Bridge
 
-A lightweight Python bridge that lets you chat with **Agy** or **Claude Code** from any Markdown editor on your iPhone, iPad, or Mac, using iCloud Drive as the sync mechanism.
+A lightweight Python bridge that lets you chat with **Agy** or **Claude Code** from any Markdown editor on your iPhone, iPad, or Mac, using iCloud Drive, Dropbox, or any other cloud folder as the sync mechanism.
 
 ## How It Works
 
-The bridge monitors two folders inside your iCloud Documents (`~/Library/Mobile Documents/com~apple~CloudDocs/agy-icloud-chat/`):
+On first run, the bridge will ask you to provide the path to your preferred cloud sync folder (e.g., `~/iCloud/agy-chat` or `~/Dropbox/agy-chat`). This preference is saved to `~/.agy_bridge_config.json`.
+
+The bridge monitors two folders inside your chosen cloud directory:
 
 | Folder | AI |
 |---|---|
@@ -17,7 +19,7 @@ Duplicate `template.md` in the folder of the AI you want to talk to, type your m
 
 - **Multi-AI Routing**: Each chat folder routes to its own AI binary with independent configuration.
 - **True Conversation Memory**: The entire markdown file is passed as context. Edit or delete previous messages — the AI adapts natively.
-- **Live Streaming**: Responses stream one character at a time and flush to iCloud every second, so you see the AI "type" in real-time.
+- **Live Streaming**: Responses stream one character at a time and flush to the file every second, so you see the AI "type" in real-time.
 - **Auto-Renaming**: Start chatting in `template.md` and the bridge will automatically generate a title and rename the file `YYYY-MM-DD-topic.md`.
 - **Smart Workspaces**: If you leave the `**Workspace:**` tag blank, it automatically sets the workspace to `~/Developer/<chat-title>`.
 - **Markdown Code Blocks**: AI responses are automatically wrapped in markdown code blocks to keep your editor clean.
@@ -79,7 +81,7 @@ If the workspace tag is left blank, it automatically infers `~/Developer/<chat-t
 ## Directory Structure
 
 ```
-~/Library/Mobile Documents/com~apple~CloudDocs/agy-icloud-chat/
+<your-cloud-folder>/
 ├── agy-chats/
 │   ├── template.md         # Duplicate this to start a new chat!
 │   ├── *.md                # Your chat files
@@ -96,7 +98,7 @@ If the workspace tag is left blank, it automatically infers `~/Developer/<chat-t
 
 1. **Python 3** required on your Mac. No external libraries needed.
 2. Install **`agy`** and/or **`claude`** CLI tools at `~/.local/bin/`.
-3. Grant **Full Disk Access** to `/usr/bin/python3` in `System Settings > Privacy & Security` — the bridge needs this to read your iCloud Drive.
+3. If using iCloud Drive, grant **Full Disk Access** to `/usr/bin/python3` in `System Settings > Privacy & Security` — the bridge needs this to read your iCloud Drive.
 4. Set up the **LaunchAgent** to run in the background (see below).
 
 ### Background Service (LaunchAgent)

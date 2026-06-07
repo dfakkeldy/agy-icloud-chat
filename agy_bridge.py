@@ -134,8 +134,8 @@ def initialize_directories():
         
     ensure_templates_exist()
 
-def extract_workspace(content, file_path):
-    match = re.search(r'\*\*Workspace:\*\*\s*(.+)', content)
+def extract_workspace(content, file_path, folder_name):
+    match = re.search(r'\*\*Workspace:\*\*[ \t]*(.+)', content)
     if match:
         path_str = match.group(1).strip().strip('\'"')
         if path_str:
@@ -144,16 +144,18 @@ def extract_workspace(content, file_path):
                 return path, True
             return path, False
             
-    base_name = os.path.splitext(os.path.basename(file_path))[0]
-    clean_name = re.sub(r'^\d{4}-\d{2}-\d{2}-', '', base_name)
-    path = os.path.expanduser(f"~/Developer/{clean_name}")
-    
-    if os.path.isdir(path):
-        return path, True
-    return path, False
+    parent_dir = os.path.basename(os.path.dirname(file_path))
+    if parent_dir != folder_name:
+        clean_name = re.sub(r'^\d{4}-\d{2}-\d{2}-', '', parent_dir)
+        path = os.path.expanduser(f"~/Developer/{clean_name}")
+        if os.path.isdir(path):
+            return path, True
+        return path, False
+        
+    return os.path.expanduser("~/"), True
 
 def extract_system_prompt(content):
-    match = re.search(r'\*\*System Prompt:\*\*\s*(.+)', content)
+    match = re.search(r'\*\*System Prompt:\*\*[ \t]*(.+)', content)
     if match:
         return match.group(1).strip()
     return None
@@ -230,7 +232,7 @@ def parse_and_respond(file_path, folder_name):
         
         content = COMMAND_STRIP_REGEX.sub('', content)
         
-        workspace_dir, is_valid_workspace = extract_workspace(content, file_path)
+        workspace_dir, is_valid_workspace = extract_workspace(content, file_path, folder_name)
         if not is_valid_workspace:
             warning_msg = f"**System Warning:** Workspace path `{workspace_dir}` not found, falling back to `~/`."
             content += f"\n\n{warning_msg}"
@@ -376,9 +378,14 @@ def get_md_files():
     for folder in CONFIGS.keys():
         dir_path = os.path.join(BASE_ICLOUD_DIR, folder)
         try:
-            for entry in os.scandir(dir_path):
-                if entry.is_file() and entry.name.endswith('.md'):
-                    md_files[entry.path] = (entry.stat().st_mtime, folder)
+            for root, dirs, files in os.walk(dir_path):
+                if 'logs' in dirs:
+                    dirs.remove('logs')
+                for file in files:
+                    if file.endswith('.md'):
+                        full_path = os.path.join(root, file)
+                        stat = os.stat(full_path)
+                        md_files[full_path] = (stat.st_mtime, folder)
         except Exception as e:
             logging.error(f"Error scanning directory {dir_path}: {e}")
     return md_files
