@@ -19,7 +19,7 @@ Duplicate `template.md` in the folder of the AI you want to talk to, type your m
 
 - **Multi-AI Routing**: Each chat folder routes to its own AI binary with independent configuration.
 - **True Conversation Memory**: The entire markdown file is passed as context. Edit or delete previous messages — the AI adapts natively.
-- **Live Streaming**: Responses stream one character at a time and flush to the file every second, so you see the AI "type" in real-time.
+- **Live Streaming**: Shows a `⏳ Thinking...` placeholder, then streams the reply one character at a time and flushes to the file every 0.5 seconds so you see the AI "type" in real-time.
 - **Auto-Renaming**: Start chatting in `template.md` and the bridge will automatically generate a title and rename the file `YYYY-MM-DD-topic.md`.
 - **Smart Workspaces**: If you leave the `**Workspace:**` tag blank, it automatically sets the workspace to `~/Developer/<chat-title>`.
 - **Markdown Code Blocks**: AI responses are automatically wrapped in markdown code blocks to keep your editor clean.
