@@ -254,7 +254,7 @@ def parse_and_respond(file_path, folder_name):
             
         full_context = f"System Instruction: {sys_prompt}\n\n" + content
             
-        atomic_write(file_path, content + f"\n\n{bot_tag}\n```\n")
+        atomic_write(file_path, content + f"\n\n{bot_tag}\n⏳ Thinking...\n\n```\n")
             
         try:
             env = os.environ.copy()
@@ -301,7 +301,7 @@ def parse_and_respond(file_path, folder_name):
                 
                 buffer += char
                 
-                if time.time() - last_write_time >= 1.0 and buffer:
+                if time.time() - last_write_time >= 0.5 and buffer:
                     esc_idx = buffer.rfind('\x1b')
                     if esc_idx != -1 and esc_idx >= len(buffer) - 20:
                         to_write = buffer[:esc_idx]
